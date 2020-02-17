@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 
 	"github.com/streadway/amqp"
 )
@@ -19,8 +20,24 @@ type Queue struct {
 }
 
 var (
-	Logger *log.Logger
+	logger = log.New(os.Stderr, "", log.LstdFlags)
+	logMu  sync.Mutex
 )
+
+func SetLogger(l *log.Logger) {
+	if l == nil {
+		l = log.New(os.Stderr, "", log.LstdFlags)
+	}
+	logMu.Lock()
+	logger = l
+	logMu.Unlock()
+}
+
+func logf(format string, v ...interface{}) {
+	logMu.Lock()
+	logger.Printf(format, v...)
+	logMu.Unlock()
+}
 
 func ConsumeMsg(filter string, handler func([]byte, Queue) error) error {
 	cctx, cancel := context.WithCancel(context.Background())
@@ -62,7 +79,7 @@ func ConsumeMsg(filter string, handler func([]byte, Queue) error) error {
 		}
 
 		go func() {
-			Logger.Printf("Consume start queue: %s\n", queue.Name)
+			logf("Consume start queue: %s\n", queue.Name)
 		CONSUMER:
 			for {
 				select {
@@ -72,7 +89,7 @@ func ConsumeMsg(filter string, handler func([]byte, Queue) error) error {
 					if ok {
 						err := handler(m.Body, queue)
 						if err != nil {
-							Logger.Println(err)
+							logf("%v", err)
 							continue
 						}
 					}
